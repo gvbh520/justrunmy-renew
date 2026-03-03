@@ -5,20 +5,56 @@ import os
 import sys
 import time
 import subprocess
+import requests
 from seleniumbase import SB
 
 LOGIN_URL = "https://justrunmy.app/id/Account/Login"
 DOMAIN    = "justrunmy.app"
 
-# 从环境变量获取账号密码
-EMAIL     = os.environ.get("JUSTRUNMY_EMAIL")
-PASSWORD  = os.environ.get("JUSTRUNMY_PASSWORD")
+# 从环境变量获取账号密码和 TG 配置
+EMAIL        = os.environ.get("JUSTRUNMY_EMAIL")
+PASSWORD     = os.environ.get("JUSTRUNMY_PASSWORD")
+TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN")
+TG_CHAT_ID   = os.environ.get("TG_CHAT_ID")
 
-# 如果未获取到账号密码，终止脚本
 if not EMAIL or not PASSWORD:
     print("❌ 致命错误：未找到 JUSTRUNMY_EMAIL 或 JUSTRUNMY_PASSWORD 环境变量！")
-    print("💡 请检查 GitHub Repository Secrets 是否配置正确。")
     sys.exit(1)
+
+# ============================================================
+#  Telegram 推送模块
+# ============================================================
+def send_tg_message(status_icon, status_text, time_left):
+    if not TG_BOT_TOKEN or not TG_CHAT_ID:
+        print("ℹ️ 未配置 TG_BOT_TOKEN 或 TG_CHAT_ID，跳过 Telegram 推送。")
+        return
+
+    # 获取北京时间 (UTC+8)
+    local_time = time.gmtime(time.time() + 8 * 3600)
+    current_time_str = time.strftime("%Y-%m-%d %H:%M:%S", local_time)
+
+    # 按照要求的格式拼接消息
+    text = (
+        f"🖥 🇩🇪 JustRunMy DE\n"
+        f"{status_icon} {status_text}\n"
+        f"⏱️ 剩余: {time_left}\n"
+        f"时间: {current_time_str}"
+    )
+
+    url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "text": text
+    }
+    
+    try:
+        r = requests.post(url, json=payload, timeout=10)
+        if r.status_code == 200:
+            print("  📩 Telegram 通知发送成功！")
+        else:
+            print(f"  ⚠️ Telegram 通知发送失败: {r.text}")
+    except Exception as e:
+        print(f"  ⚠️ Telegram 通知发送异常: {e}")
 
 # ============================================================
 #  页面注入脚本
@@ -223,7 +259,7 @@ def login(sb) -> bool:
     except Exception:
         pass
 
-    print(f"📧 填写邮箱: {EMAIL}")
+    print(f"📧 填写邮箱...")
     js_fill_input(sb, 'input[name="Email"]', EMAIL)
     time.sleep(0.3)
     
@@ -277,6 +313,7 @@ def renew(sb) -> bool:
     except Exception as e:
         print(f"❌ 找不到应用卡片 (JustRunMy DE): {e}")
         sb.save_screenshot("renew_app_not_found.png")
+        send_tg_message("❌", "续期失败(找不到应用)", "未知")
         return False
 
     print("🖱️ 点击 Reset Timer 按钮...")
@@ -286,6 +323,7 @@ def renew(sb) -> bool:
     except Exception as e:
         print(f"❌ 找不到 Reset Timer 按钮: {e}")
         sb.save_screenshot("renew_reset_btn_not_found.png")
+        send_tg_message("❌", "续期失败(找不到按钮)", "未知")
         return False
 
     print("🛡️ 检查续期弹窗内是否需要 CF 验证...")
@@ -293,6 +331,7 @@ def renew(sb) -> bool:
         if not handle_turnstile(sb):
             print("❌ 弹窗内的 Turnstile 验证失败")
             sb.save_screenshot("renew_turnstile_fail.png")
+            send_tg_message("❌", "续期失败(人机验证未过)", "未知")
             return False
     else:
         print("ℹ️ 弹窗内未检测到 Turnstile")
@@ -305,6 +344,7 @@ def renew(sb) -> bool:
     except Exception as e:
         print(f"❌ 找不到 Just Reset 按钮: {e}")
         sb.save_screenshot("renew_just_reset_not_found.png")
+        send_tg_message("❌", "续期失败(无法确认)", "未知")
         return False
 
     print("🔍 验证最终倒计时状态...")
@@ -317,18 +357,21 @@ def renew(sb) -> bool:
         if "2 days 23" in timer_text or "3 days" in timer_text:
             print("✅ 完美！续期任务圆满完成！")
             sb.save_screenshot("renew_success.png")
+            send_tg_message("✅", "续期完成", timer_text)
             return True
         else:
             print("⚠️ 倒计时似乎没有重置到最高值，请人工检查截图确认。")
             sb.save_screenshot("renew_warning.png")
+            send_tg_message("⚠️", "续期异常(请检查)", timer_text)
             return True 
     except Exception as e:
         print(f"⚠️ 读取倒计时失败，但流程已执行完毕: {e}")
         sb.save_screenshot("renew_timer_read_fail.png")
+        send_tg_message("⚠️", "读取剩余时间失败", "未知")
         return False
 
 # ============================================================
-#  脚本执行入口
+#  脚本执行入口 (可选代理)
 # ============================================================
 def main():
     print("=" * 50)
@@ -357,6 +400,7 @@ def main():
             renew(sb)
         else:
             print("\n❌ 登录环节失败，终止后续续期操作。")
+            send_tg_message("❌", "登录失败", "未知")
 
 if __name__ == "__main__":
     main()
