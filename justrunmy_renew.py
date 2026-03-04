@@ -16,7 +16,7 @@ DOMAIN    = "justrunmy.app"
 # ============================================================
 EMAIL        = "199779218@qq.com"
 PASSWORD     = "zhang668"
-TG_BOT_TOKEN = "6228271292" ("6228271292")
+TG_BOT_TOKEN = "6228271292"
 TG_CHAT_ID   = "7512589197:AAFxRnhTqYZNLxPylegEI8a6QoF1dqIUlSQ"
 
 if not EMAIL or not PASSWORD:
